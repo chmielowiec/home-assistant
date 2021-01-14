@@ -30,7 +30,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 
-from .const import CONNECTION_TIMEOUT, DEFAULT_DEVICE_NAME, DEFAULT_NOTIFY_SERVICE_NAME
+from .const import (
+    CONF_TRACK_WIRED_CLIENTS,
+    CONNECTION_TIMEOUT,
+    DEFAULT_DEVICE_NAME,
+    DEFAULT_NOTIFY_SERVICE_NAME,
+    DEFAULT_TRACK_WIRED_CLIENTS,
+)
 
 # see https://github.com/PyCQA/pylint/issues/3202 about the DOMAIN's pylint issue
 from .const import DOMAIN  # pylint: disable=unused-import
@@ -298,6 +304,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         self.config_entry.options.get(CONF_RECIPIENT, [])
                     ),
                 ): str,
+                vol.Optional(
+                    CONF_TRACK_WIRED_CLIENTS,
+                    default=DEFAULT_TRACK_WIRED_CLIENTS,
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=data_schema)

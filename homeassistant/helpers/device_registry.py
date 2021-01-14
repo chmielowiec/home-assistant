@@ -722,8 +722,6 @@ def _remove_device_from_index(
 ) -> None:
     """Remove a device from the index."""
     for identifier in device.identifiers:
-        if identifier in devices_index[IDX_IDENTIFIERS]:
-            del devices_index[IDX_IDENTIFIERS][identifier]
+        devices_index[IDX_IDENTIFIERS].pop(identifier, None)
     for connection in device.connections:
-        if connection in devices_index[IDX_CONNECTIONS]:
-            del devices_index[IDX_CONNECTIONS][connection]
+        devices_index[IDX_CONNECTIONS].pop(connection, None)

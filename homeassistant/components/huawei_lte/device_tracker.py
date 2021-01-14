@@ -31,6 +31,7 @@ _HostType = Dict[str, Any]
 
 
 def _get_hosts(router: Router) -> Optional[List[_HostType]]:
+    # XXX don't bother doing this all the time; we should know from the start if lan_host_info will work
     for key in KEY_LAN_HOST_INFO, KEY_WLAN_HOST_LIST:
         try:
             return cast(List[_HostType], router.data[key]["Hosts"]["Host"])
@@ -203,5 +204,12 @@ class HuaweiLteScannerEntity(HuaweiLteBaseEntity, ScannerEntity):
             self._device_state_attributes = {
                 _better_snakecase(k): v
                 for k, v in host.items()
-                if k not in ("Active", "HostName")
+                if k
+                in {
+                    "AddressSource",
+                    "AssociatedSsid",
+                    "InterfaceType",
+                    "IpAddress",
+                    "MacAddress",
+                }
             }
