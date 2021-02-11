@@ -88,12 +88,6 @@ async def async_setup_entry(
     async_add_new_entities(hass, router.url, async_add_entities, tracked)
 
 
-def _is_wireless(host: _HostType) -> bool:
-    # LAN host info entries have an "InterfaceType" property, "Ethernet" / "Wireless".
-    # WLAN host list ones don't, but they're expected to be all wireless.
-    return cast(Optional[str], host.get("InterfaceType", "Wireless")) != "Ethernet"
-
-
 def _is_connected(host: Optional[_HostType]) -> bool:
     # LAN host info entries have an "Active" property, "1" or "0".
     # WLAN host list ones don't, but that call appears to return active hosts only.
@@ -123,12 +117,7 @@ def async_add_new_entities(
 
     new_entities: List[Entity] = []
     for host in (
-        x
-        for x in hosts
-        if not _is_us(x)
-        and _is_connected(x)
-        and _is_wireless(x)
-        and x.get("MacAddress")
+        x for x in hosts if not _is_us(x) and _is_connected(x) and x.get("MacAddress")
     ):
         entity = HuaweiLteScannerEntity(router, host["MacAddress"])
         if entity.unique_id in tracked:
