@@ -2,6 +2,9 @@
 import logging
 import math
 
+from miio.integrations.humidifier.deerma.airhumidifier_jsqs import (
+    OperationMode as AirhumidifierJsqsOperationMode,
+)
 from miio.integrations.humidifier.deerma.airhumidifier_mjjsq import (
     OperationMode as AirhumidifierMjjsqOperationMode,
 )
@@ -32,6 +35,7 @@ from .const import (
     MODEL_AIRHUMIDIFIER_CA1,
     MODEL_AIRHUMIDIFIER_CA4,
     MODEL_AIRHUMIDIFIER_CB1,
+    MODELS_HUMIDIFIER_JSQS,
     MODELS_HUMIDIFIER_MIOT,
     MODELS_HUMIDIFIER_MJJSQ,
 )
@@ -58,6 +62,7 @@ AVAILABLE_MODES_MJJSQ = [
     for mode in AirhumidifierMjjsqOperationMode
     if mode is not AirhumidifierMjjsqOperationMode.WetAndProtect
 ]
+AVAILABLE_MODES_JSQS = [mode.name for mode in AirhumidifierJsqsOperationMode]
 AVAILABLE_MODES_OTHER = [
     mode.name
     for mode in AirhumidifierOperationMode
@@ -189,6 +194,9 @@ class XiaomiAirHumidifier(XiaomiGenericHumidifier, HumidifierEntity):
             self._humidity_steps = 100
         elif self._model in MODELS_HUMIDIFIER_MJJSQ:
             self._attr_available_modes = AVAILABLE_MODES_MJJSQ
+            self._humidity_steps = 100
+        elif self._model in MODELS_HUMIDIFIER_JSQS:
+            self._attr_available_modes = AVAILABLE_MODES_JSQS
             self._humidity_steps = 100
         else:
             self._attr_available_modes = AVAILABLE_MODES_OTHER

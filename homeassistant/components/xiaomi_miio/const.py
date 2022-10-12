@@ -77,6 +77,8 @@ MODEL_AIRHUMIDIFIER_CA4 = "zhimi.humidifier.ca4"
 MODEL_AIRHUMIDIFIER_CB1 = "zhimi.humidifier.cb1"
 MODEL_AIRHUMIDIFIER_JSQ = "deerma.humidifier.jsq"
 MODEL_AIRHUMIDIFIER_JSQ1 = "deerma.humidifier.jsq1"
+MODEL_AIRHUMIDIFIER_JSQ5 = "deerma.humidifier.jsq5"
+MODEL_AIRHUMIDIFIER_JSQS = "deerma.humidifier.jsqs"
 MODEL_AIRHUMIDIFIER_MJJSQ = "deerma.humidifier.mjjsq"
 
 MODEL_AIRFRESH_A1 = "dmaker.airfresh.a1"
@@ -156,6 +158,7 @@ MODELS_HUMIDIFIER_MJJSQ = [
     MODEL_AIRHUMIDIFIER_JSQ1,
     MODEL_AIRHUMIDIFIER_MJJSQ,
 ]
+MODELS_HUMIDIFIER_JSQS = [MODEL_AIRHUMIDIFIER_JSQ5, MODEL_AIRHUMIDIFIER_JSQS]
 
 # AirQuality Models
 MODEL_AIRQUALITYMONITOR_V1 = "zhimi.airmonitor.v1"
