@@ -28,7 +28,7 @@ from miio import (
     FanZA5,
     RoborockVacuum,
     Timer,
-    VacuumStatus,
+    VacuumStatus, AirHumidifierJsqs,
 )
 from miio.gateway.gateway import GatewayException
 
@@ -59,6 +59,7 @@ from .const import (
     MODELS_FAN,
     MODELS_FAN_MIIO,
     MODELS_HUMIDIFIER,
+    MODELS_HUMIDIFIER_JSQS,
     MODELS_HUMIDIFIER_MIIO,
     MODELS_HUMIDIFIER_MIOT,
     MODELS_HUMIDIFIER_MJJSQ,
@@ -303,6 +304,9 @@ async def async_create_miio_device_and_coordinator(
     # Humidifiers
     if model in MODELS_HUMIDIFIER_MIOT:
         device = AirHumidifierMiot(host, token)
+        migrate = True
+    elif model in MODELS_HUMIDIFIER_JSQS:
+        device = AirHumidifierJsqs(host, token, model=model)
         migrate = True
     elif model in MODELS_HUMIDIFIER_MJJSQ:
         device = AirHumidifierMjjsq(host, token, model=model)

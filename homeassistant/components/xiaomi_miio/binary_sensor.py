@@ -26,6 +26,7 @@ from .const import (
     MODEL_AIRFRESH_A1,
     MODEL_AIRFRESH_T2017,
     MODEL_FAN_ZA5,
+    MODELS_HUMIDIFIER_JSQS,
     MODELS_HUMIDIFIER_MIIO,
     MODELS_HUMIDIFIER_MIOT,
     MODELS_HUMIDIFIER_MJJSQ,
@@ -132,6 +133,7 @@ VACUUM_SENSORS_SEPARATE_MOP = {
 HUMIDIFIER_MIIO_BINARY_SENSORS = (ATTR_WATER_TANK_DETACHED,)
 HUMIDIFIER_MIOT_BINARY_SENSORS = (ATTR_WATER_TANK_DETACHED,)
 HUMIDIFIER_MJJSQ_BINARY_SENSORS = (ATTR_NO_WATER, ATTR_WATER_TANK_DETACHED)
+HUMIDIFIER_JSQS_BINARY_SENSORS = (ATTR_NO_WATER, ATTR_WATER_TANK_DETACHED)
 
 
 def _setup_vacuum_sensors(hass, config_entry, async_add_entities):
@@ -190,6 +192,8 @@ async def async_setup_entry(
             sensors = HUMIDIFIER_MIOT_BINARY_SENSORS
         elif model in MODELS_HUMIDIFIER_MJJSQ:
             sensors = HUMIDIFIER_MJJSQ_BINARY_SENSORS
+        elif model in MODELS_HUMIDIFIER_JSQS:
+            sensors = HUMIDIFIER_JSQS_BINARY_SENSORS
         elif model in MODELS_VACUUM:
             return _setup_vacuum_sensors(hass, config_entry, async_add_entities)
 
