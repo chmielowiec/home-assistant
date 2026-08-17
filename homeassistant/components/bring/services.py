@@ -1,7 +1,5 @@
 """Actions for Bring! integration."""
 
-from typing import TYPE_CHECKING
-
 from bring_api import (
     ActivityType,
     BringAuthException,
@@ -11,9 +9,8 @@ from bring_api import (
 )
 import voluptuous as vol
 
-from homeassistant.components.event import ATTR_EVENT_TYPE
+from homeassistant.components.event import EventEntityStateAttribute
 from homeassistant.components.todo import DOMAIN as TODO_DOMAIN
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -46,19 +43,6 @@ SERVICE_ACTIVITY_STREAM_REACTION_SCHEMA = vol.Schema(
 )
 
 
-def get_config_entry(hass: HomeAssistant, entry_id: str) -> BringConfigEntry:
-    """Return config entry or raise if not found or not loaded."""
-    entry = hass.config_entries.async_get_entry(entry_id)
-    if TYPE_CHECKING:
-        assert entry
-    if entry.state is not ConfigEntryState.LOADED:
-        raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="entry_not_loaded",
-        )
-    return entry
-
-
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Set up services for Bring! integration."""
@@ -78,13 +62,15 @@ def async_setup_services(hass: HomeAssistant) -> None:
                     ATTR_ENTITY_ID: call.data[ATTR_ENTITY_ID],
                 },
             )
-        config_entry = get_config_entry(hass, entity.config_entry_id)
+        config_entry: BringConfigEntry = service.async_get_config_entry(
+            hass, DOMAIN, entity.config_entry_id
+        )
 
         coordinator = config_entry.runtime_data.data
 
         list_uuid = entity.unique_id.split("_")[1]
 
-        activity = state.attributes[ATTR_EVENT_TYPE]
+        activity = state.attributes[EventEntityStateAttribute.EVENT_TYPE]
 
         reaction: ReactionType = call.data[ATTR_REACTION]
 

@@ -1,14 +1,26 @@
 """Common fixtures for the liebherr tests."""
 
 from collections.abc import Generator
+import copy
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pyliebherrhomeapi import (
+    AutoDoorControl,
+    BioFreshPlusControl,
+    BioFreshPlusMode,
     Device,
     DeviceState,
     DeviceType,
+    DoorState,
+    HydroBreezeControl,
+    HydroBreezeMode,
+    IceMakerControl,
+    IceMakerMode,
+    PresentationLightControl,
     TemperatureControl,
     TemperatureUnit,
+    ToggleControl,
     ZonePosition,
 )
 import pytest
@@ -40,6 +52,8 @@ MOCK_DEVICE_STATE = DeviceState(
             min=2,
             max=8,
             unit=TemperatureUnit.CELSIUS,
+            set_temperature_steps=[2, 4, 6, 8],
+            set_temperature_steps_enabled=True,
         ),
         TemperatureControl(
             zone_id=2,
@@ -52,8 +66,87 @@ MOCK_DEVICE_STATE = DeviceState(
             max=-16,
             unit=TemperatureUnit.CELSIUS,
         ),
+        ToggleControl(
+            name="supercool",
+            type="ToggleControl",
+            zone_id=1,
+            zone_position=ZonePosition.TOP,
+            value=False,
+        ),
+        ToggleControl(
+            name="superfrost",
+            type="ToggleControl",
+            zone_id=2,
+            zone_position=ZonePosition.BOTTOM,
+            value=True,
+        ),
+        ToggleControl(
+            name="partymode",
+            type="ToggleControl",
+            zone_id=None,
+            zone_position=None,
+            value=False,
+        ),
+        ToggleControl(
+            name="nightmode",
+            type="ToggleControl",
+            zone_id=None,
+            zone_position=None,
+            value=True,
+        ),
+        IceMakerControl(
+            name="icemaker",
+            type="IceMakerControl",
+            zone_id=2,
+            zone_position=ZonePosition.BOTTOM,
+            ice_maker_mode=IceMakerMode.OFF,
+            has_max_ice=True,
+        ),
+        HydroBreezeControl(
+            name="hydrobreeze",
+            type="HydroBreezeControl",
+            zone_id=1,
+            zone_position=ZonePosition.TOP,
+            current_mode=HydroBreezeMode.LOW,
+        ),
+        BioFreshPlusControl(
+            name="biofreshplus",
+            type="BioFreshPlusControl",
+            zone_id=1,
+            zone_position=ZonePosition.TOP,
+            current_mode=BioFreshPlusMode.ZERO_ZERO,
+            supported_modes=[
+                BioFreshPlusMode.ZERO_ZERO,
+                BioFreshPlusMode.ZERO_MINUS_TWO,
+                BioFreshPlusMode.MINUS_TWO_MINUS_TWO,
+                BioFreshPlusMode.MINUS_TWO_ZERO,
+            ],
+        ),
+        PresentationLightControl(
+            name="presentationlight",
+            type="PresentationLightControl",
+            value=3,
+            max=5,
+        ),
+        AutoDoorControl(
+            name="autodoor",
+            type="AutoDoorControl",
+            zone_id=1,
+            zone_position=ZonePosition.TOP,
+            value=DoorState.CLOSED,
+        ),
     ],
 )
+
+
+@pytest.fixture(autouse=True)
+def patch_refresh_delay() -> Generator[None]:
+    """Patch REFRESH_DELAY to 0 to avoid delays in tests."""
+    with patch(
+        "homeassistant.components.liebherr.entity.REFRESH_DELAY",
+        timedelta(seconds=0),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -90,8 +183,20 @@ def mock_liebherr_client() -> Generator[MagicMock]:
     ):
         client = mock_client.return_value
         client.get_devices.return_value = [MOCK_DEVICE]
-        client.get_device_state.return_value = MOCK_DEVICE_STATE
+        # Return a fresh copy each call so mutations don't leak between calls.
+        client.get_device_state.side_effect = lambda *a, **kw: copy.deepcopy(
+            MOCK_DEVICE_STATE
+        )
         client.set_temperature = AsyncMock()
+        client.set_super_cool = AsyncMock()
+        client.set_super_frost = AsyncMock()
+        client.set_party_mode = AsyncMock()
+        client.set_night_mode = AsyncMock()
+        client.set_ice_maker = AsyncMock()
+        client.set_hydro_breeze = AsyncMock()
+        client.set_bio_fresh_plus = AsyncMock()
+        client.set_presentation_light = AsyncMock()
+        client.trigger_auto_door = AsyncMock()
         yield client
 
 

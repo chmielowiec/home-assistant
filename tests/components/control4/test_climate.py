@@ -39,8 +39,9 @@ def _make_climate_data(
     humidity: int = 50,
     cool_setpoint: float = 75.0,
     heat_setpoint: float = 68.0,
+    scale: str = "FAHRENHEIT",
 ) -> dict[int, dict[str, Any]]:
-    """Build mock climate variable data for item ID 123."""
+    """Build mock climate variable data for item ID 123 (Fahrenheit)."""
     return {
         123: {
             "HVAC_STATE": hvac_state,
@@ -49,6 +50,7 @@ def _make_climate_data(
             "HUMIDITY": humidity,
             "COOL_SETPOINT_F": cool_setpoint,
             "HEAT_SETPOINT_F": heat_setpoint,
+            "SCALE": scale,
         }
     }
 
@@ -112,6 +114,21 @@ async def test_climate_entities(
             _make_climate_data(hvac_state="Fan"),
             HVACAction.FAN,
             id="fan",
+        ),
+        pytest.param(
+            _make_climate_data(hvac_state="Idle"),
+            HVACAction.IDLE,
+            id="idle",
+        ),
+        pytest.param(
+            _make_climate_data(hvac_state="Stage 1 Heat"),
+            HVACAction.HEATING,
+            id="stage_1_heat",
+        ),
+        pytest.param(
+            _make_climate_data(hvac_state="Stage 2 Cool", hvac_mode="Cool"),
+            HVACAction.COOLING,
+            id="stage_2_cool",
         ),
     ],
 )
@@ -236,7 +253,7 @@ async def test_set_hvac_mode(
         {ATTR_ENTITY_ID: ENTITY_ID, ATTR_HVAC_MODE: hvac_mode},
         blocking=True,
     )
-    mock_c4_climate.setHvacMode.assert_called_once_with(expected_c4_mode)
+    mock_c4_climate.set_hvac_mode.assert_called_once_with(expected_c4_mode)
 
 
 @pytest.mark.parametrize(
@@ -248,7 +265,7 @@ async def test_set_hvac_mode(
                 temperature=72.5,
                 humidity=45,
             ),
-            "setHeatSetpointF",
+            "set_heat_setpoint_f",
             id="heat",
         ),
         pytest.param(
@@ -258,7 +275,7 @@ async def test_set_hvac_mode(
                 temperature=74.0,
                 cool_setpoint=72.0,
             ),
-            "setCoolSetpointF",
+            "set_cool_setpoint_f",
             id="cool",
         ),
     ],
@@ -313,8 +330,8 @@ async def test_set_temperature_range_auto_mode(
         },
         blocking=True,
     )
-    mock_c4_climate.setHeatSetpointF.assert_called_once_with(65.0)
-    mock_c4_climate.setCoolSetpointF.assert_called_once_with(78.0)
+    mock_c4_climate.set_heat_setpoint_f.assert_called_once_with(65.0)
+    mock_c4_climate.set_cool_setpoint_f.assert_called_once_with(78.0)
 
 
 @pytest.mark.parametrize("mock_climate_variables", [{}])
@@ -344,6 +361,7 @@ async def test_climate_not_created_when_no_initial_data(
                 # Missing TEMPERATURE_F and HUMIDITY
                 "COOL_SETPOINT_F": 75.0,
                 "HEAT_SETPOINT_F": 68.0,
+                "SCALE": "FAHRENHEIT",
             }
         }
     ],
@@ -365,6 +383,40 @@ async def test_climate_missing_variables(
     assert state.attributes.get("current_temperature") is None
     assert state.attributes.get("current_humidity") is None
     assert state.attributes["temperature"] == 68.0
+
+
+@pytest.mark.parametrize(
+    "mock_climate_variables",
+    [
+        {
+            123: {
+                "HVAC_STATE": "Off",
+                "HVAC_MODE": "Heat",
+                "TEMPERATURE_F": 72.0,
+                "HUMIDITY": "Undefined",
+                "COOL_SETPOINT_F": 75.0,
+                "HEAT_SETPOINT_F": 68.0,
+                "SCALE": "FAHRENHEIT",
+            }
+        }
+    ],
+)
+@pytest.mark.usefixtures(
+    "mock_c4_account",
+    "mock_c4_director",
+    "mock_climate_update_variables",
+    "init_integration",
+)
+async def test_climate_undefined_humidity(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test climate entity handles 'Undefined' humidity string gracefully."""
+    state = hass.states.get(ENTITY_ID)
+    assert state is not None
+    assert state.state == HVACMode.HEAT
+    assert state.attributes.get("current_temperature") == 72.0
+    assert state.attributes.get("current_humidity") is None
 
 
 @pytest.mark.parametrize(
@@ -430,7 +482,7 @@ async def test_set_fan_mode(
         blocking=True,
     )
     # Verify the Control4 API is called with the C4 format ("On" not "on")
-    mock_c4_climate.setFanMode.assert_called_once_with("On")
+    mock_c4_climate.set_fan_mode.assert_called_once_with("On")
 
 
 @pytest.mark.parametrize(
@@ -444,6 +496,7 @@ async def test_set_fan_mode(
                 "HUMIDITY": 50,
                 "COOL_SETPOINT_F": 75.0,
                 "HEAT_SETPOINT_F": 68.0,
+                "SCALE": "FAHRENHEIT",
                 # No FAN_MODE or FAN_MODES_LIST
             }
         }
@@ -467,3 +520,55 @@ async def test_fan_mode_not_supported(
     assert not (
         state.attributes.get("supported_features") & ClimateEntityFeature.FAN_MODE
     )
+
+
+# Temperature unit tests - verify correct API methods are called based on SCALE
+
+
+@pytest.mark.parametrize(
+    ("mock_climate_variables", "expected_method", "unexpected_method"),
+    [
+        pytest.param(
+            _make_climate_data(hvac_state="Off", hvac_mode="Heat"),
+            "set_heat_setpoint_f",
+            "set_heat_setpoint_c",
+            id="fahrenheit_heat_calls_F_not_C",
+        ),
+        pytest.param(
+            _make_climate_data(hvac_state="Cool", hvac_mode="Cool"),
+            "set_cool_setpoint_f",
+            "set_cool_setpoint_c",
+            id="fahrenheit_cool_calls_F_not_C",
+        ),
+    ],
+)
+@pytest.mark.usefixtures(
+    "mock_c4_account",
+    "mock_c4_director",
+    "mock_climate_update_variables",
+    "init_integration",
+)
+async def test_set_temperature_calls_correct_api(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_c4_climate: MagicMock,
+    expected_method: str,
+    unexpected_method: str,
+) -> None:
+    """Test setting temperature calls correct API method based on SCALE.
+
+    Verifies that when setting temperature:
+    - The correct method for the scale is called
+    - The wrong scale's method is NOT called
+    """
+    # Reset mock to clear any calls from previous parametrized test runs
+    mock_c4_climate.reset_mock()
+
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_TEMPERATURE,
+        {ATTR_ENTITY_ID: ENTITY_ID, ATTR_TEMPERATURE: 70.0},
+        blocking=True,
+    )
+    getattr(mock_c4_climate, expected_method).assert_called_once_with(70.0)
+    getattr(mock_c4_climate, unexpected_method).assert_not_called()

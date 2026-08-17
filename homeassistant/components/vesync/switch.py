@@ -3,9 +3,10 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import logging
-from typing import Any, Final
+from typing import Any, Final, override
 
 from pyvesync.base_devices import VeSyncBaseDevice, VeSyncHumidifier
+from pyvesync.const import DeviceStatus
 from pyvesync.device_container import DeviceContainer
 
 from homeassistant.components.switch import (
@@ -13,12 +14,13 @@ from homeassistant.components.switch import (
     SwitchEntity,
     SwitchEntityDescription,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .common import is_outlet, is_wall_switch, rgetattr
+from .common import is_humidifier, is_outlet, is_wall_switch, rgetattr
 from .const import VS_DEVICES, VS_DISCOVERY
 from .coordinator import VesyncConfigEntry, VeSyncDataCoordinator
 from .entity import VeSyncBaseEntity
@@ -58,6 +60,17 @@ def _toggle_auto_stop(device: VeSyncBaseDevice, *args: Any) -> Awaitable[bool]:
             return sw.toggle_automatic_stop(*args)
         case _:
             raise HomeAssistantError("Device does not support toggling automatic stop.")
+
+
+def _toggle_drying_mode_on_power_off(
+    device: VeSyncBaseDevice, target: bool
+) -> Awaitable[bool]:
+    """Toggle auto drying mode on purifier devices."""
+    match device:
+        case VeSyncHumidifier() as sw if hasattr(sw, "toggle_drying_mode"):
+            return sw.toggle_drying_mode(target)
+        case _:
+            raise HomeAssistantError("Device does not support toggling drying mode.")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -107,6 +120,17 @@ SENSOR_DESCRIPTIONS: Final[tuple[VeSyncSwitchEntityDescription, ...]] = (
         translation_key="auto_off_config",
         on_fn=lambda device: _toggle_auto_stop(device, True),
         off_fn=lambda device: _toggle_auto_stop(device, False),
+    ),
+    VeSyncSwitchEntityDescription(
+        key="drying_mode_power_off",
+        is_on=lambda device: device.state.drying_mode_auto_switch == DeviceStatus.ON,
+        exists_fn=(
+            lambda device: is_humidifier(device) and "drying_mode" in device.features
+        ),
+        translation_key="drying_mode_power_off",
+        on_fn=lambda device: _toggle_drying_mode_on_power_off(device, True),
+        off_fn=lambda device: _toggle_drying_mode_on_power_off(device, False),
+        entity_category=EntityCategory.CONFIG,
     ),
 )
 
@@ -172,10 +196,12 @@ class VeSyncSwitchEntity(SwitchEntity, VeSyncBaseEntity[VeSyncBaseDevice]):
             self._attr_device_class = SwitchDeviceClass.SWITCH
 
     @property
+    @override
     def is_on(self) -> bool | None:
         """Return the entity value to represent the entity state."""
         return self.entity_description.is_on(self.device)
 
+    @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the entity off."""
         if not await self.entity_description.off_fn(self.device):
@@ -185,6 +211,7 @@ class VeSyncSwitchEntity(SwitchEntity, VeSyncBaseEntity[VeSyncBaseDevice]):
 
         self.async_write_ha_state()
 
+    @override
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the entity on."""
         if not await self.entity_description.on_fn(self.device):

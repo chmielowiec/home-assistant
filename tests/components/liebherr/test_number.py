@@ -1,5 +1,6 @@
 """Test the Liebherr number platform."""
 
+import copy
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -25,8 +26,9 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 from .conftest import MOCK_DEVICE
 
@@ -42,6 +44,18 @@ def platforms() -> list[Platform]:
 @pytest.fixture(autouse=True)
 def enable_all_entities(entity_registry_enabled_by_default: None) -> None:
     """Make sure all entities are enabled."""
+
+
+@pytest.mark.usefixtures("init_integration")
+async def test_temperature_step(hass: HomeAssistant) -> None:
+    """Test the entities expose their supported temperature steps."""
+    top_zone = hass.states.get("number.test_fridge_top_zone_setpoint")
+    bottom_zone = hass.states.get("number.test_fridge_bottom_zone_setpoint")
+
+    assert top_zone is not None
+    assert bottom_zone is not None
+    assert top_zone.attributes["step"] == 2
+    assert bottom_zone.attributes["step"] == 1
 
 
 @pytest.mark.usefixtures("init_integration")
@@ -71,7 +85,7 @@ async def test_single_zone_number(
         device_name="K2601",
     )
     mock_liebherr_client.get_devices.return_value = [device]
-    mock_liebherr_client.get_device_state.return_value = DeviceState(
+    single_zone_state = DeviceState(
         device=device,
         controls=[
             TemperatureControl(
@@ -87,6 +101,9 @@ async def test_single_zone_number(
             )
         ],
     )
+    mock_liebherr_client.get_device_state.side_effect = lambda *a, **kw: copy.deepcopy(
+        single_zone_state
+    )
 
     mock_config_entry.add_to_hass(hass)
     with patch("homeassistant.components.liebherr.PLATFORMS", platforms):
@@ -96,67 +113,6 @@ async def test_single_zone_number(
     await snapshot_platform(hass, entity_registry, snapshot, mock_config_entry.entry_id)
 
 
-async def test_multi_zone_with_none_position(
-    hass: HomeAssistant,
-    entity_registry: er.EntityRegistry,
-    mock_liebherr_client: MagicMock,
-    mock_config_entry: MockConfigEntry,
-    platforms: list[Platform],
-) -> None:
-    """Test multi-zone device with None zone_position falls back to base translation key."""
-    device = Device(
-        device_id="multi_zone_none",
-        nickname="Multi Zone Fridge",
-        device_type=DeviceType.COMBI,
-        device_name="CBNes9999",
-    )
-    mock_liebherr_client.get_devices.return_value = [device]
-    mock_liebherr_client.get_device_state.return_value = DeviceState(
-        device=device,
-        controls=[
-            TemperatureControl(
-                zone_id=1,
-                zone_position=None,  # None triggers fallback
-                name="Fridge",
-                type="fridge",
-                value=5,
-                target=4,
-                min=2,
-                max=8,
-                unit=TemperatureUnit.CELSIUS,
-            ),
-            TemperatureControl(
-                zone_id=2,
-                zone_position=ZonePosition.BOTTOM,
-                name="Freezer",
-                type="freezer",
-                value=-18,
-                target=-18,
-                min=-24,
-                max=-16,
-                unit=TemperatureUnit.CELSIUS,
-            ),
-        ],
-    )
-
-    mock_config_entry.add_to_hass(hass)
-    with patch("homeassistant.components.liebherr.PLATFORMS", platforms):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
-
-    # Zone with None position should have base translation key
-    zone1_entity = entity_registry.async_get("number.multi_zone_fridge_setpoint")
-    assert zone1_entity is not None
-    assert zone1_entity.translation_key == "setpoint_temperature"
-
-    # Zone with valid position should have zone-specific translation key
-    zone2_entity = entity_registry.async_get(
-        "number.multi_zone_fridge_bottom_zone_setpoint"
-    )
-    assert zone2_entity is not None
-    assert zone2_entity.translation_key == "setpoint_temperature_bottom_zone"
-
-
 @pytest.mark.usefixtures("init_integration")
 async def test_set_temperature(
     hass: HomeAssistant,
@@ -164,6 +120,8 @@ async def test_set_temperature(
 ) -> None:
     """Test setting the temperature."""
     entity_id = "number.test_fridge_top_zone_setpoint"
+
+    initial_call_count = mock_liebherr_client.get_device_state.call_count
 
     await hass.services.async_call(
         NUMBER_DOMAIN,
@@ -179,6 +137,60 @@ async def test_set_temperature(
         unit=TemperatureUnit.CELSIUS,
     )
 
+    # Verify coordinator refresh was triggered
+    assert mock_liebherr_client.get_device_state.call_count > initial_call_count
+
+
+@pytest.mark.usefixtures("init_integration")
+async def test_set_temperature_after_unit_conversion(
+    hass: HomeAssistant,
+    mock_liebherr_client: MagicMock,
+) -> None:
+    """Test setting a temperature converted from the configured unit."""
+    hass.config.units = US_CUSTOMARY_SYSTEM
+
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {
+            ATTR_ENTITY_ID: "number.test_fridge_top_zone_setpoint",
+            ATTR_VALUE: 39,
+        },
+        blocking=True,
+    )
+
+    mock_liebherr_client.set_temperature.assert_called_once_with(
+        device_id="test_device_id",
+        zone_id=1,
+        target=4,
+        unit=TemperatureUnit.CELSIUS,
+    )
+
+
+@pytest.mark.usefixtures("init_integration")
+@pytest.mark.parametrize("value", [4.1, 5])
+async def test_set_temperature_not_in_allowed_steps(
+    hass: HomeAssistant,
+    mock_liebherr_client: MagicMock,
+    value: float,
+) -> None:
+    """Test setting a temperature outside the allowed steps."""
+    with pytest.raises(
+        ServiceValidationError,
+        match=rf"Temperature {float(value)} is not supported. Allowed values: 2, 4, 6, 8",
+    ):
+        await hass.services.async_call(
+            NUMBER_DOMAIN,
+            SERVICE_SET_VALUE,
+            {
+                ATTR_ENTITY_ID: "number.test_fridge_top_zone_setpoint",
+                ATTR_VALUE: value,
+            },
+            blocking=True,
+        )
+
+    mock_liebherr_client.set_temperature.assert_not_called()
+
 
 @pytest.mark.usefixtures("init_integration")
 async def test_set_temperature_failure(
@@ -192,55 +204,16 @@ async def test_set_temperature_failure(
         "Connection failed"
     )
 
-    with pytest.raises(HomeAssistantError, match="Failed to set temperature"):
+    with pytest.raises(
+        HomeAssistantError,
+        match="An error occurred while communicating with the device",
+    ):
         await hass.services.async_call(
             NUMBER_DOMAIN,
             SERVICE_SET_VALUE,
             {ATTR_ENTITY_ID: entity_id, ATTR_VALUE: 6},
             blocking=True,
         )
-
-
-@pytest.mark.usefixtures("init_integration")
-async def test_number_update_failure(
-    hass: HomeAssistant,
-    mock_liebherr_client: MagicMock,
-    freezer: FrozenDateTimeFactory,
-) -> None:
-    """Test number becomes unavailable when coordinator update fails and recovers."""
-    entity_id = "number.test_fridge_top_zone_setpoint"
-
-    # Initial state should be available with value
-    state = hass.states.get(entity_id)
-    assert state is not None
-    assert state.state == "4"
-
-    # Simulate update error
-    mock_liebherr_client.get_device_state.side_effect = LiebherrConnectionError(
-        "Connection failed"
-    )
-
-    # Advance time to trigger coordinator refresh (60 second interval)
-    freezer.tick(timedelta(seconds=61))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-    # Number should now be unavailable
-    state = hass.states.get(entity_id)
-    assert state is not None
-    assert state.state == STATE_UNAVAILABLE
-
-    # Simulate recovery
-    mock_liebherr_client.get_device_state.side_effect = None
-
-    freezer.tick(timedelta(seconds=61))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-    # Number should recover
-    state = hass.states.get(entity_id)
-    assert state is not None
-    assert state.state == "4"
 
 
 @pytest.mark.usefixtures("init_integration")
@@ -261,7 +234,7 @@ async def test_number_when_control_missing(
     assert state.attributes["unit_of_measurement"] == "°C"
 
     # Device stops reporting controls
-    mock_liebherr_client.get_device_state.return_value = DeviceState(
+    mock_liebherr_client.get_device_state.side_effect = lambda *a, **kw: DeviceState(
         device=MOCK_DEVICE, controls=[]
     )
 
@@ -290,7 +263,7 @@ async def test_number_with_none_min_max(
         device_name="K2601",
     )
     mock_liebherr_client.get_devices.return_value = [device]
-    mock_liebherr_client.get_device_state.return_value = DeviceState(
+    none_min_max_state = DeviceState(
         device=device,
         controls=[
             TemperatureControl(
@@ -305,6 +278,9 @@ async def test_number_with_none_min_max(
                 unit=TemperatureUnit.CELSIUS,
             )
         ],
+    )
+    mock_liebherr_client.get_device_state.side_effect = lambda *a, **kw: copy.deepcopy(
+        none_min_max_state
     )
 
     mock_config_entry.add_to_hass(hass)
